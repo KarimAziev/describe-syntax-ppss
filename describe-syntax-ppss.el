@@ -125,6 +125,7 @@ ITEM can be propertized string or plist."
   (goto-char position)
   (mark-sexp))
 
+;;;###autoload
 (defun describe-syntax-ppss-at-point ()
   "Show annotated result of `syntax-ppss' at point in minibuffer.
 Perfom action for selected choice defined in `describe-syntax-ppss-actions'."
@@ -155,7 +156,7 @@ Perfom action for selected choice defined in `describe-syntax-ppss-actions'."
                                            face))
                                   (format "%s" (or value "")))))
                  (describe-syntax-ppss-add-props text :value value
-                                                    :idx idx)))
+                                                 :idx idx)))
              choices)))
     (setq result (completing-read prompt choices))
     (when-let ((pos (describe-syntax-ppss-get-prop result :value))
