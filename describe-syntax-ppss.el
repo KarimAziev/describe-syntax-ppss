@@ -118,7 +118,7 @@ ITEM can be propertized string or plist."
         (when new
           (setcdr last new)
           (setq last (cdr new)))))
-    (apply 'propertize string (cdr result))))
+    (apply #'propertize string (cdr result))))
 
 (defun describe-syntax-ppss-jump-and-mark (position)
   "Jump to POSITION and mark sexp."
@@ -132,7 +132,7 @@ Perfom action for selected choice defined in `describe-syntax-ppss-actions'."
   (interactive)
   (let ((buffer (current-buffer))
         (prompt)
-        (choices (mapcar 'car describe-syntax-ppss-actions))
+        (choices (mapcar #'car describe-syntax-ppss-actions))
         (result))
     (with-current-buffer buffer
       (setq describe-syntax-ppss-position (point))
