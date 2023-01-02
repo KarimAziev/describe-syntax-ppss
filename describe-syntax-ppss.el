@@ -126,6 +126,20 @@ ITEM can be propertized string or plist."
   (mark-sexp))
 
 ;;;###autoload
+(defun describe-syntax-ppss-kill-cursor-position (&optional detail)
+  "Same as `what-cursor-position' but also copies position.
+In addition, with prefix argument DETAIL, show details about that character
+in *Help* buffer."
+  (interactive "P")
+  (let* ((str (funcall-interactively #'what-cursor-position detail))
+         (pos (with-temp-buffer
+                (insert str)
+                (re-search-backward "point=\\([0-9]+\\)" nil t 1)
+                (match-string-no-properties 1))))
+    (kill-new pos)
+    (string-to-number pos)))
+
+;;;###autoload
 (defun describe-syntax-ppss-at-point ()
   "Show annotated result of `syntax-ppss' at point in minibuffer.
 Perfom action for selected choice defined in `describe-syntax-ppss-actions'."
