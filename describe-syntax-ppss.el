@@ -61,7 +61,7 @@
 (defun describe-syntax-ppss-highlight-comment-or-string (position)
   "Highlight comment or string starting at POSITION.
 POSITION should be start of comment of string."
-  (let ((ppss (syntax-ppss (point))))
+  (let ((ppss (syntax-ppss position)))
     (save-excursion
       (cond ((nth 4 ppss)
              (progn (goto-char position)
