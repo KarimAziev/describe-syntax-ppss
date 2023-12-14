@@ -6,7 +6,8 @@
 ;; URL: https://github.com/KarimAziev/describe-syntax-ppss
 ;; Keywords: lisp
 ;; Version: 0.1.1
-;; Package-Requires: ((emacs "26.1"))
+;; Package-Requires: ((emacs "28.1"))
+;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -33,6 +34,7 @@
 
 ;;; Code:
 
+(declare-function color-saturate-name "color")
 (defvar-local describe-syntax-ppss-info nil)
 (defvar-local describe-syntax-ppss-position nil)
 
@@ -72,17 +74,251 @@ POSITION should be start of comment of string."
              (forward-sexp 1)
              (pulse-momentary-highlight-region position (point)))))))
 
+(defun describe-syntax-ppss--minibuffer-get-metadata ()
+  "Return current minibuffer completion metadata."
+  (completion-metadata
+   (buffer-substring-no-properties
+    (minibuffer-prompt-end)
+    (max (minibuffer-prompt-end)
+         (point)))
+   minibuffer-completion-table
+   minibuffer-completion-predicate))
+
+(defun describe-syntax-ppss--minibuffer-ivy-selected-cand ()
+  "Return the currently selected item in Ivy."
+  (when (and (memq 'ivy--queue-exhibit post-command-hook)
+             (boundp 'ivy-text)
+             (boundp 'ivy--length)
+             (boundp 'ivy-last)
+             (fboundp 'ivy--expand-file-name)
+             (fboundp 'ivy-state-current))
+    (cons
+     (completion-metadata-get (ignore-errors (describe-syntax-ppss--minibuffer-get-metadata))
+                              'category)
+     (ivy--expand-file-name
+      (if (and (> ivy--length 0)
+               (stringp (ivy-state-current ivy-last)))
+          (ivy-state-current ivy-last)
+        ivy-text)))))
+
+(defun describe-syntax-ppss--minibuffer-get-default-candidates ()
+  "Return all current completion candidates from the minibuffer."
+  (when (minibufferp)
+    (let* ((all (completion-all-completions
+                 (minibuffer-contents)
+                 minibuffer-completion-table
+                 minibuffer-completion-predicate
+                 (max 0 (- (point)
+                           (minibuffer-prompt-end)))))
+           (last (last all)))
+      (when last (setcdr last nil))
+      (cons
+       (completion-metadata-get (describe-syntax-ppss--minibuffer-get-metadata) 'category)
+       all))))
+
+(defun describe-syntax-ppss--get-minibuffer-get-default-completion ()
+  "Target the top completion candidate in the minibuffer.
+Return the category metadatum as the type of the target."
+  (when (and (minibufferp) minibuffer-completion-table)
+    (pcase-let* ((`(,category . ,candidates)
+                  (describe-syntax-ppss--minibuffer-get-default-candidates))
+                 (contents (minibuffer-contents))
+                 (top (if (test-completion contents
+                                           minibuffer-completion-table
+                                           minibuffer-completion-predicate)
+                          contents
+                        (let ((completions (completion-all-sorted-completions)))
+                          (if (null completions)
+                              contents
+                            (concat
+                             (substring contents
+                                        0 (or (cdr (last completions)) 0))
+                             (car completions)))))))
+      (cons category (or (car (member top candidates)) top)))))
+
+(defvar describe-syntax-ppss--minibuffer-targets-finders
+  '(describe-syntax-ppss--minibuffer-ivy-selected-cand
+    describe-syntax-ppss--get-minibuffer-get-default-completion))
+
+(defun describe-syntax-ppss--minibuffer-get-current-candidate ()
+  "Return cons filename for current completion candidate."
+  (let (target)
+    (run-hook-wrapped
+     'describe-syntax-ppss--minibuffer-targets-finders
+     (lambda (fun)
+       (when-let ((result (funcall fun)))
+         (when (and (cdr-safe result)
+                    (stringp (cdr-safe result))
+                    (not (string-empty-p (cdr-safe result))))
+           (setq target result)))
+       (and target (minibufferp))))
+    target))
+
+(defun describe-syntax-ppss--minibuffer-exit-with-action (action)
+  "Call ACTION with current candidate and exit minibuffer."
+  (pcase-let ((`(,_category . ,current)
+               (describe-syntax-ppss--minibuffer-get-current-candidate)))
+    (progn (run-with-timer 0.1 nil action current)
+           (abort-minibuffers))))
+
+
+(defun describe-syntax-ppss--minibuffer-action-no-exit (action)
+  "Call ACTION with minibuffer candidate in its original window."
+  (pcase-let ((`(,_category . ,current)
+               (describe-syntax-ppss--minibuffer-get-current-candidate)))
+    (with-minibuffer-selected-window
+      (funcall action current))))
+
+
+(defun describe-syntax-ppss--completing-read-with-preview (prompt collection
+                                                                  &optional preview-action keymap predicate require-match
+                                                                  initial-input hist def inherit-input-method)
+  "Read COLLECTION in minibuffer with PROMPT and KEYMAP.
+See `completing-read' for PREDICATE REQUIRE-MATCH INITIAL-INPUT HIST DEF
+INHERIT-INPUT-METHOD."
+  (let ((collection (if (stringp (car-safe collection))
+                        (copy-tree collection)
+                      collection)))
+    (minibuffer-with-setup-hook
+        (lambda ()
+          (when (minibufferp)
+            (when keymap
+              (let ((map (make-composed-keymap keymap
+                                               (current-local-map))))
+                (use-local-map map)))
+            (when preview-action
+              (add-hook 'after-change-functions (lambda (&rest _)
+                                                  (interactive)
+                                                  (describe-syntax-ppss--minibuffer-action-no-exit
+                                                   preview-action))
+                        nil t))))
+      (completing-read prompt
+                       collection
+                       predicate
+                       require-match initial-input hist
+                       def inherit-input-method))))
+(defvar-local describe-syntax-ppss-overlay nil)
+(defun describe-syntax-ppss--overlay-make (start end &optional buffer
+                                                 front-advance rear-advance
+                                                 &rest props)
+  "Create a new overlay with range BEG to END in BUFFER and return it.
+If omitted, BUFFER defaults to the current buffer.
+START and END may be integers or markers.
+The fourth arg FRONT-ADVANCE, if non-nil, makes the marker
+for the front of the overlay advance when text is inserted there
+\(which means the text *is not* included in the overlay).
+The fifth arg REAR-ADVANCE, if non-nil, makes the marker
+for the rear of the overlay advance when text is inserted there
+\(which means the text *is* included in the overlay).
+PROPS is a plist to put on overlay."
+  (let ((overlay (make-overlay start end buffer front-advance
+                               rear-advance)))
+    (dotimes (idx (length props))
+      (when (eq (logand idx 1) 0)
+        (let* ((prop-name (nth idx props))
+               (val (plist-get props prop-name)))
+          (overlay-put overlay prop-name val))))
+    overlay))
+
+(defun describe-syntax-ppss--unset-and-remove (var-symbol)
+  "Remove overlay from VAR-SYMBOL value."
+  (when (overlayp (symbol-value var-symbol))
+    (delete-overlay (symbol-value var-symbol)))
+  (set var-symbol nil))
+
+(defun describe-syntax-ppss--overlay-set (var-symbol start end &optional buffer
+                                                     front-advance rear-advance
+                                                     &rest props)
+  "Create a new overlay and set value of VAR-SYMBOL to it.
+If omitted, BUFFER defaults to the current buffer.
+START and END may be integers or markers.
+The fourth arg FRONT-ADVANCE, if non-nil, makes the marker
+for the front of the overlay advance when text is inserted there
+\(which means the text *is not* included in the overlay).
+The fifth arg REAR-ADVANCE, if non-nil, makes the marker
+for the rear of the overlay advance when text is inserted there
+\(which means the text *is* included in the overlay).
+PROPS is a plist to put on overlay."
+  (when (overlayp (symbol-value var-symbol))
+    (delete-overlay (symbol-value var-symbol)))
+  (set var-symbol nil)
+  (set var-symbol (apply #'describe-syntax-ppss--overlay-make
+                         (append (list start end
+                                       buffer front-advance
+                                       rear-advance)
+                                 props))))
+
+(defun describe-syntax-ppss-update-overlays (positions)
+  "Update overlays with syntax information at POSITIONS.
+
+Argument POSITIONS is a list of buffer positions where overlays should be
+updated."
+  (require 'color)
+  (let ((ovs)
+        (curr-pos (point))
+        (cl (foreground-color-at-point))
+        (bg (background-color-at-point)))
+    (dotimes (i (length positions))
+      (let ((pos (nth i positions))
+            (next-pos (or (nth (1+ i) positions)
+                          curr-pos))
+            (percent (round (/ (* 100 i)
+                               (length positions)))))
+        (let ((pl `(:background
+                    ,(color-saturate-name
+                      cl
+                      percent)
+                    :foreground
+                    ,(color-saturate-name
+                      bg
+                      percent)))
+              (selected (= pos curr-pos)))
+          (when selected
+            (plist-put pl :weight 'extra-bold))
+          (push
+           (describe-syntax-ppss--overlay-make pos (1+ pos)
+                                               nil
+                                               nil
+                                               nil
+                                               'face
+                                               '(:weight extra-bold)
+                                               'describe-syntax--ppss t)
+           ovs)
+          (push
+           (describe-syntax-ppss--overlay-make pos next-pos
+                                               nil
+                                               nil
+                                               nil
+                                               'face
+                                               pl
+                                               'describe-syntax--ppss t)
+           ovs))))
+    ovs))
+
 (defun describe-syntax-ppss-visit-open-parens (positions)
   "Incrementally highlight lists at POSITIONS."
-  (let (beg (next t))
-    (while (and (setq beg (pop positions))
-                next)
-      (goto-char beg)
-      (save-excursion
-        (forward-list 1)
-        (pulse-momentary-highlight-region beg (point)))
-      (setq next (when positions
-                   (yes-or-no-p "Next?"))))))
+  (require 'color)
+  (let ((ovs))
+    (unwind-protect
+        (progn
+          (setq ovs (describe-syntax-ppss-update-overlays positions))
+          (let
+              ((res
+                (describe-syntax-ppss--completing-read-with-preview
+                 "Position: "
+                 (mapcar (apply-partially #'format "%s") positions)
+                 (lambda (it)
+                   (let ((pos (string-to-number it)))
+                     (dolist (ov ovs)
+                       (and (overlayp ov)
+                            (delete-overlay ov)))
+                     (save-excursion
+                       (goto-char pos)
+                       (setq ovs (describe-syntax-ppss-update-overlays positions))))))))
+            (goto-char (string-to-number res))))
+      (dolist (ov ovs)
+        (and (overlayp ov)
+             (delete-overlay ov))))))
 
 (defun describe-syntax-ppss-stringify (x)
   "Convert X to string effeciently.
