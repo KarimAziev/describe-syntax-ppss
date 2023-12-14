@@ -179,5 +179,32 @@ Perfom action for selected choice defined in `describe-syntax-ppss-actions'."
                              describe-syntax-ppss-actions))))
       (funcall action pos))))
 
+(defvar-local describe-syntax-ppss-text-props-last-pos nil)
+
+(defun describe-syntax-ppss-text-props-at-point ()
+  "Display text properties and syntax state at point."
+  (let ((pos (point)))
+    (unless
+        (and describe-syntax-ppss-text-props-last-pos
+             (= pos
+                describe-syntax-ppss-text-props-last-pos))
+      (when-let ((wnd (get-buffer-window (current-buffer))))
+        (when (eq wnd (selected-window))
+          (setq describe-syntax-ppss-text-props-last-pos pos)
+          (unless (>= pos (point-max))
+            (with-selected-window wnd
+              (describe-text-properties pos))))))))
+
+;;;###autoload
+(define-minor-mode describe-syntax-ppss-text-props-mode
+  "Toggle displaying text properties and syntax state at point after commands."
+  :lighter " descr-props"
+  :global nil
+  (if describe-syntax-ppss-text-props-mode
+      (add-hook 'post-command-hook #'describe-syntax-ppss-text-props-at-point
+                nil 'local)
+    (remove-hook 'post-command-hook #'describe-syntax-ppss-text-props-at-point
+                 'local)))
+
 (provide 'describe-syntax-ppss)
 ;;; describe-syntax-ppss.el ends here
