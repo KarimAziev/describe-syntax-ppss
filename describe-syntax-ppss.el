@@ -35,6 +35,7 @@
 ;;; Code:
 
 (declare-function color-saturate-name "color")
+
 (defvar-local describe-syntax-ppss-info nil)
 (defvar-local describe-syntax-ppss-position nil)
 
@@ -48,12 +49,9 @@
     ("following pos quote" . describe-syntax-ppss-jump-and-mark)
     ("paren-depth" . identity)
     ("style of comment" . describe-syntax-ppss-print-char)
-    ("start of comment/string" .
-     describe-syntax-ppss-highlight-comment-or-string)
-    ("positions of currently open parens" .
-     describe-syntax-ppss-visit-open-parens)
-    ("two character comment delimiter" .
-     describe-syntax-ppss-jump-and-mark))
+    ("start of comment/string" . describe-syntax-ppss-highlight-comment-or-string)
+    ("positions of currently open parens" . describe-syntax-ppss-visit-open-parens)
+    ("two character comment delimiter" . describe-syntax-ppss-jump-and-mark))
   "Alist of syntax pps descriptions and actions.")
 
 (defun describe-syntax-ppss-print-char (char)
@@ -93,7 +91,8 @@ POSITION should be start of comment of string."
              (fboundp 'ivy--expand-file-name)
              (fboundp 'ivy-state-current))
     (cons
-     (completion-metadata-get (ignore-errors (describe-syntax-ppss--minibuffer-get-metadata))
+     (completion-metadata-get (ignore-errors
+                                (describe-syntax-ppss--minibuffer-get-metadata))
                               'category)
      (ivy--expand-file-name
       (if (and (> ivy--length 0)
@@ -113,7 +112,8 @@ POSITION should be start of comment of string."
            (last (last all)))
       (when last (setcdr last nil))
       (cons
-       (completion-metadata-get (describe-syntax-ppss--minibuffer-get-metadata) 'category)
+       (completion-metadata-get (describe-syntax-ppss--minibuffer-get-metadata)
+                                'category)
        all))))
 
 (defun describe-syntax-ppss--get-minibuffer-get-default-completion ()
@@ -161,7 +161,6 @@ Return the category metadatum as the type of the target."
     (with-minibuffer-selected-window
       (funcall action current))))
 
-
 (defun describe-syntax-ppss--completing-read-with-preview (prompt collection
                                                                   &optional preview-action keymap predicate require-match
                                                                   initial-input hist def inherit-input-method)
@@ -189,6 +188,7 @@ INHERIT-INPUT-METHOD."
                        predicate
                        require-match initial-input hist
                        def inherit-input-method))))
+
 (defun describe-syntax-ppss--overlay-make (start end &optional buffer
                                                  front-advance rear-advance
                                                  &rest props)
@@ -264,8 +264,6 @@ updated."
            ovs))))
     ovs))
 
-
-
 (defun describe-syntax-ppss--point-visible (pos)
   "Check if position is visible in window.
 
@@ -275,7 +273,6 @@ Argument POS is the buffer position to check for visibility within the window."
       (< (window-start)
          pos
          (window-end)))))
-
 
 (defun describe-syntax-ppss-visit-open-parens (positions)
   "Incrementally highlight lists at POSITIONS."
@@ -310,16 +307,15 @@ Argument POS is the buffer position to check for visibility within the window."
 (defun describe-syntax-ppss-stringify (x)
   "Convert X to string effeciently.
 X can be any object."
-  (cond
-   ((stringp x)
-    x)
-   ((symbolp x)
-    (symbol-name x))
-   ((integerp x)
-    (number-to-string x))
-   ((floatp x)
-    (number-to-string x))
-   (t (format "%s" x))))
+  (cond ((stringp x)
+         x)
+        ((symbolp x)
+         (symbol-name x))
+        ((integerp x)
+         (number-to-string x))
+        ((floatp x)
+         (number-to-string x))
+        (t (format "%s" x))))
 
 (defun describe-syntax-ppss-get-prop (item property)
   "Get PROPERTY from ITEM.
@@ -407,10 +403,9 @@ Perfom action for selected choice defined in `describe-syntax-ppss-actions'."
 (defun describe-syntax-ppss-text-props-at-point ()
   "Display text properties and syntax state at point."
   (let ((pos (point)))
-    (unless
-        (and describe-syntax-ppss-text-props-last-pos
-             (= pos
-                describe-syntax-ppss-text-props-last-pos))
+    (unless (and describe-syntax-ppss-text-props-last-pos
+                 (= pos
+                    describe-syntax-ppss-text-props-last-pos))
       (when-let ((wnd (get-buffer-window (current-buffer))))
         (when (eq wnd (selected-window))
           (setq describe-syntax-ppss-text-props-last-pos pos)
