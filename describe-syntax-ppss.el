@@ -154,14 +154,6 @@ Return the category metadatum as the type of the target."
        (and target (minibufferp))))
     target))
 
-(defun describe-syntax-ppss--minibuffer-exit-with-action (action)
-  "Call ACTION with current candidate and exit minibuffer."
-  (pcase-let ((`(,_category . ,current)
-               (describe-syntax-ppss--minibuffer-get-current-candidate)))
-    (progn (run-with-timer 0.1 nil action current)
-           (abort-minibuffers))))
-
-
 (defun describe-syntax-ppss--minibuffer-action-no-exit (action)
   "Call ACTION with minibuffer candidate in its original window."
   (pcase-let ((`(,_category . ,current)
@@ -197,7 +189,6 @@ INHERIT-INPUT-METHOD."
                        predicate
                        require-match initial-input hist
                        def inherit-input-method))))
-(defvar-local describe-syntax-ppss-overlay nil)
 (defun describe-syntax-ppss--overlay-make (start end &optional buffer
                                                  front-advance rear-advance
                                                  &rest props)
@@ -220,34 +211,6 @@ PROPS is a plist to put on overlay."
           (overlay-put overlay prop-name val))))
     overlay))
 
-(defun describe-syntax-ppss--unset-and-remove (var-symbol)
-  "Remove overlay from VAR-SYMBOL value."
-  (when (overlayp (symbol-value var-symbol))
-    (delete-overlay (symbol-value var-symbol)))
-  (set var-symbol nil))
-
-(defun describe-syntax-ppss--overlay-set (var-symbol start end &optional buffer
-                                                     front-advance rear-advance
-                                                     &rest props)
-  "Create a new overlay and set value of VAR-SYMBOL to it.
-If omitted, BUFFER defaults to the current buffer.
-START and END may be integers or markers.
-The fourth arg FRONT-ADVANCE, if non-nil, makes the marker
-for the front of the overlay advance when text is inserted there
-\(which means the text *is not* included in the overlay).
-The fifth arg REAR-ADVANCE, if non-nil, makes the marker
-for the rear of the overlay advance when text is inserted there
-\(which means the text *is* included in the overlay).
-PROPS is a plist to put on overlay."
-  (when (overlayp (symbol-value var-symbol))
-    (delete-overlay (symbol-value var-symbol)))
-  (set var-symbol nil)
-  (set var-symbol (apply #'describe-syntax-ppss--overlay-make
-                         (append (list start end
-                                       buffer front-advance
-                                       rear-advance)
-                                 props))))
-
 (defun describe-syntax-ppss-update-overlays (positions)
   "Update overlays with syntax information at POSITIONS.
 
@@ -257,13 +220,14 @@ updated."
   (let ((ovs)
         (curr-pos (point))
         (cl (foreground-color-at-point))
-        (bg (background-color-at-point)))
-    (dotimes (i (length positions))
-      (let ((pos (nth i positions))
-            (next-pos (or (nth (1+ i) positions)
-                          curr-pos))
-            (percent (round (/ (* 100 i)
-                               (length positions)))))
+        (bg (background-color-at-point))
+        (count (length positions)))
+    (dotimes (i count)
+      (let* ((pos (nth i positions))
+             (next-pos (nth (1+ i) positions))
+             (selected (= pos curr-pos))
+             (percent (round (/ (* 100 i)
+                                count))))
         (let ((pl `(:background
                     ,(color-saturate-name
                       cl
@@ -271,54 +235,77 @@ updated."
                     :foreground
                     ,(color-saturate-name
                       bg
-                      percent)))
-              (selected (= pos curr-pos)))
+                      percent))))
           (when selected
-            (plist-put pl :weight 'extra-bold))
+            (setq pl (plist-put pl :underline t)))
+          (when next-pos
+            (push
+             (describe-syntax-ppss--overlay-make pos (1+ pos)
+                                                 nil
+                                                 nil
+                                                 nil
+                                                 'face
+                                                 (if (facep 'show-paren-match)
+                                                     'show-paren-match
+                                                   `(:underline t
+                                                     :weight bold))
+                                                 'describe-syntax--ppss t
+                                                 'priority 100)
+             ovs))
           (push
-           (describe-syntax-ppss--overlay-make pos (1+ pos)
-                                               nil
-                                               nil
-                                               nil
-                                               'face
-                                               '(:weight extra-bold)
-                                               'describe-syntax--ppss t)
-           ovs)
-          (push
-           (describe-syntax-ppss--overlay-make pos next-pos
+           (describe-syntax-ppss--overlay-make pos (or next-pos curr-pos)
                                                nil
                                                nil
                                                nil
                                                'face
                                                pl
-                                               'describe-syntax--ppss t)
+                                               'describe-syntax--ppss t
+                                               'priority 99)
            ovs))))
     ovs))
+
+
+
+(defun describe-syntax-ppss--point-visible (pos)
+  "Check if position is visible in window.
+
+Argument POS is the buffer position to check for visibility within the window."
+  (when-let ((wnd (get-buffer-window (current-buffer))))
+    (with-selected-window wnd
+      (< (window-start)
+         pos
+         (window-end)))))
+
 
 (defun describe-syntax-ppss-visit-open-parens (positions)
   "Incrementally highlight lists at POSITIONS."
   (require 'color)
-  (let ((ovs))
+  (let ((ovs)
+        (init-pos (point))
+        (res))
+    (setq positions (append positions
+                            (list init-pos)))
     (unwind-protect
         (progn
-          (setq ovs (describe-syntax-ppss-update-overlays positions))
-          (let
-              ((res
-                (describe-syntax-ppss--completing-read-with-preview
-                 "Position: "
-                 (mapcar (apply-partially #'format "%s") positions)
-                 (lambda (it)
-                   (let ((pos (string-to-number it)))
-                     (dolist (ov ovs)
-                       (and (overlayp ov)
-                            (delete-overlay ov)))
-                     (save-excursion
-                       (goto-char pos)
-                       (setq ovs (describe-syntax-ppss-update-overlays positions))))))))
-            (goto-char (string-to-number res))))
+          (setq ovs (describe-syntax-ppss-update-overlays
+                     positions))
+          (setq res (describe-syntax-ppss--completing-read-with-preview
+                     "Position: "
+                     (mapcar (apply-partially #'format "%s")
+                             (butlast positions))
+                     (lambda (it)
+                       (let ((pos (string-to-number it)))
+                         (dolist (ov ovs)
+                           (and (overlayp ov)
+                                (delete-overlay ov)))
+                         (goto-char pos)
+                         (unless (describe-syntax-ppss--point-visible pos)
+                           (set-window-point (selected-window) pos))
+                         (setq ovs (describe-syntax-ppss-update-overlays positions)))))))
       (dolist (ov ovs)
         (and (overlayp ov)
-             (delete-overlay ov))))))
+             (delete-overlay ov)))
+      (goto-char (if res (string-to-number res) init-pos)))))
 
 (defun describe-syntax-ppss-stringify (x)
   "Convert X to string effeciently.
