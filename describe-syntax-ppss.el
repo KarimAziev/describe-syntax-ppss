@@ -138,7 +138,20 @@ Return the category metadatum as the type of the target."
 
 (defvar describe-syntax-ppss--minibuffer-targets-finders
   '(describe-syntax-ppss--minibuffer-ivy-selected-cand
+    describe-syntax-ppss--vertico-selected
     describe-syntax-ppss--get-minibuffer-get-default-completion))
+
+(declare-function vertico--candidate "ext:vertico")
+(declare-function vertico--update "ext:vertico")
+
+(defun describe-syntax-ppss--vertico-selected ()
+  "Target the currently selected item in Vertico.
+Return the category metadatum as the type of the target."
+  (when (bound-and-true-p vertico--input)
+    (vertico--update)
+    (cons (completion-metadata-get
+           (describe-syntax-ppss--minibuffer-get-metadata) 'category)
+          (vertico--candidate))))
 
 (defun describe-syntax-ppss--minibuffer-get-current-candidate ()
   "Return cons filename for current completion candidate."
