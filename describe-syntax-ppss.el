@@ -159,7 +159,7 @@ Return the category metadatum as the type of the target."
     (run-hook-wrapped
      'describe-syntax-ppss--minibuffer-targets-finders
      (lambda (fun)
-       (when-let ((result (funcall fun)))
+       (when-let* ((result (funcall fun)))
          (when (and (cdr-safe result)
                     (stringp (cdr-safe result))
                     (not (string-empty-p (cdr-safe result))))
@@ -281,7 +281,7 @@ updated."
   "Check if position is visible in window.
 
 Argument POS is the buffer position to check for visibility within the window."
-  (when-let ((wnd (get-buffer-window (current-buffer))))
+  (when-let* ((wnd (get-buffer-window (current-buffer))))
     (with-selected-window wnd
       (< (window-start)
          pos
@@ -405,7 +405,7 @@ Perfom action for selected choice defined in `describe-syntax-ppss-actions'."
                                                  :idx idx)))
              choices)))
     (setq result (completing-read prompt choices))
-    (when-let ((pos (describe-syntax-ppss-get-prop result :value))
+    (when-let* ((pos (describe-syntax-ppss-get-prop result :value))
                (action (cdr (nth
                              (describe-syntax-ppss-get-prop result :idx)
                              describe-syntax-ppss-actions))))
@@ -419,7 +419,7 @@ Perfom action for selected choice defined in `describe-syntax-ppss-actions'."
     (unless (and describe-syntax-ppss-text-props-last-pos
                  (= pos
                     describe-syntax-ppss-text-props-last-pos))
-      (when-let ((wnd (get-buffer-window (current-buffer))))
+      (when-let* ((wnd (get-buffer-window (current-buffer))))
         (when (eq wnd (selected-window))
           (setq describe-syntax-ppss-text-props-last-pos pos)
           (unless (>= pos (point-max))
